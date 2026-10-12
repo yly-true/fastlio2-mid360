@@ -1,6 +1,7 @@
 #ifndef SENSOR_SCAN_GENERATION_HPP
 #define SENSOR_SCAN_GENERATION_HPP
 
+#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -15,6 +16,7 @@
 #include "tf2_ros/transform_listener.h"
 #include "tf2_ros/transform_listener.h"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
+#include "tf2/LinearMath/Transform.h"
 #include "pcl_ros/transforms.hpp"
 
 #define RST  "\033[0m"    
@@ -34,8 +36,6 @@ private:
 
     std::string lidar_frame_;
     std::string base_footprint_frame_;
-    std::string chassis_frame_;
-    tf2::Transform tf_lidar_to_base_footprint_;
 
     std::unique_ptr<tf2_ros::TransformBroadcaster> br_;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub_laser_cloud_;
@@ -50,6 +50,10 @@ private:
     using SyncPolicy = message_filters::sync_policies::ApproximateTime<
         nav_msgs::msg::Odometry, sensor_msgs::msg::PointCloud2>;
     std::unique_ptr<message_filters::Synchronizer<SyncPolicy>> sync_;
+
+    tf2::Transform previous_transform_;
+    int64_t previous_stamp_ns_ = 0;
+    bool has_previous_odometry_ = false;
 
 
     void laserCloudAndOdometryHandler(

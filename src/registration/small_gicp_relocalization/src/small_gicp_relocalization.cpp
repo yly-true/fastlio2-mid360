@@ -14,7 +14,9 @@
 
 #include "small_gicp_relocalization/small_gicp_relocalization.hpp"
 
-#include "pcl/common/transforms.h"
+#include <cmath>
+#include <stdexcept>
+
 #include "pcl_conversions/pcl_conversions.h"
 #include "small_gicp/pcl/pcl_registration.hpp"
 #include "small_gicp/util/downsampling_omp.hpp"
@@ -33,13 +35,13 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   this->declare_parameter("global_leaf_size", 0.25);
   this->declare_parameter("registered_leaf_size", 0.25);
   this->declare_parameter("max_dist_sq", 1.0);
+  this->declare_parameter("min_inlier_ratio", 0.25);
+  this->declare_parameter("max_mean_error", 3.0);
   this->declare_parameter("map_frame", "map");
   this->declare_parameter("odom_frame", "odom");
-  this->declare_parameter("base_frame", "");
   this->declare_parameter("robot_base_frame", "");
-  this->declare_parameter("lidar_frame", "");
   this->declare_parameter("prior_pcd_file", "");
-  this->declare_parameter("init_pose", std::vector<double>{0., 0., 0., 0., 0., 0.});
+  this->declare_parameter("init_pose", std::vector<double>{});
   this->declare_parameter("input_cloud_topic", "registered_scan");
 
   this->get_parameter("num_threads", num_threads_);
@@ -47,18 +49,18 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   this->get_parameter("global_leaf_size", global_leaf_size_);
   this->get_parameter("registered_leaf_size", registered_leaf_size_);
   this->get_parameter("max_dist_sq", max_dist_sq_);
+  this->get_parameter("min_inlier_ratio", min_inlier_ratio_);
+  this->get_parameter("max_mean_error", max_mean_error_);
   this->get_parameter("map_frame", map_frame_);
   this->get_parameter("odom_frame", odom_frame_);
-  this->get_parameter("base_frame", base_frame_);
   this->get_parameter("robot_base_frame", robot_base_frame_);
-  this->get_parameter("lidar_frame", lidar_frame_);
   this->get_parameter("prior_pcd_file", prior_pcd_file_);
   this->get_parameter("init_pose", init_pose_);
   this->get_parameter("input_cloud_topic", input_cloud_topic_);
 
-  // 初始化位姿
-  // [x, y, z, roll, pitch, yaw] - init_pose parameters
-  if (!init_pose_.empty() && init_pose_.size() >= 6) {
+  // An explicit six-value init_pose is a map<-odom guess; the default is empty.
+  if (init_pose_.size() == 6) {
+    has_initial_pose_ = true;
     result_t_.translation() << init_pose_[0], init_pose_[1], init_pose_[2];
     result_t_.linear() =
       Eigen::AngleAxisd(init_pose_[5], Eigen::Vector3d::UnitZ()) *
@@ -80,7 +82,6 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   tf_listener_ = std::make_unique<tf2_ros::TransformListener>(*tf_buffer_);
   tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(this);
 
-  // 加载地图并对齐的机器的 odom 下
   loadGlobalMap(prior_pcd_file_);
 
   // pcd点云降采样，转为 0.25*0.25*0.25 体素盒子，
@@ -89,6 +90,9 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   target_ = small_gicp::voxelgrid_sampling_omp<
     pcl::PointCloud<pcl::PointXYZ>, pcl::PointCloud<pcl::PointCovariance>>(
     *global_map_, global_leaf_size_);
+  if (target_->size() <= static_cast<size_t>(num_neighbors_)) {
+    throw std::runtime_error("PCD map has too few points after downsampling");
+  }
 
   // 计算每个点附近 num_neighbors_ 个点的协方差矩阵
   // Estimate covariances of points
@@ -98,6 +102,14 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   // Create KdTree for target
   target_tree_ = std::make_shared<small_gicp::KdTree<pcl::PointCloud<pcl::PointCovariance>>>(
     target_, small_gicp::KdTreeBuilderOMP(num_threads_));
+
+  map_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(
+    "/global_map", rclcpp::QoS(1).transient_local().reliable());
+  sensor_msgs::msg::PointCloud2 map_msg;
+  pcl::toROSMsg(*global_map_, map_msg);
+  map_msg.header.frame_id = map_frame_;
+  map_msg.header.stamp = this->now();
+  map_pub_->publish(map_msg);
 
   pcd_sub_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
     input_cloud_topic_, 10,
@@ -118,49 +130,35 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
 
 void SmallGicpRelocalizationNode::loadGlobalMap(const std::string & file_name)
 {
-  if (pcl::io::loadPCDFile<pcl::PointXYZ>(file_name, *global_map_) == -1) {
-    RCLCPP_ERROR(this->get_logger(), "Couldn't read PCD file: %s", file_name.c_str());
-    return;
+  if (pcl::io::loadPCDFile<pcl::PointXYZ>(file_name, *global_map_) < 0 ||
+      global_map_->size() < 20) {
+    throw std::runtime_error("PCD map is missing or too small: " + file_name);
   }
   RCLCPP_INFO(this->get_logger(), "Loaded global map with %zu points", global_map_->points.size());
-
-  // NOTE: Transform global pcd_map (based on `lidar_odom` frame) to the `odom` frame
-  Eigen::Affine3d odom_to_lidar_odom;
-  while (true) {
-    try {
-      auto tf_stamped = tf_buffer_->lookupTransform(
-        base_frame_, lidar_frame_, this->now(), rclcpp::Duration::from_seconds(1.0));
-      odom_to_lidar_odom = tf2::transformToEigen(tf_stamped.transform);
-      RCLCPP_INFO_STREAM(
-        this->get_logger(), "odom_to_lidar_odom: translation = "
-                              << odom_to_lidar_odom.translation().transpose() << ", rpy = "
-                              << odom_to_lidar_odom.rotation().eulerAngles(0, 1, 2).transpose());
-      break;
-    } catch (tf2::TransformException & ex) {
-      RCLCPP_WARN(this->get_logger(), "TF lookup failed: %s Retrying...", ex.what());
-      rclcpp::sleep_for(std::chrono::seconds(1));
-    }
-  }
-  pcl::transformPointCloud(*global_map_, *global_map_, odom_to_lidar_odom);
 }
 
 void SmallGicpRelocalizationNode::registeredPcdCallback(
   const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 {
+  if (msg->header.frame_id != "camera_init") {
+    RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+      "Expected FAST-LIO cloud in camera_init, got %s", msg->header.frame_id.c_str());
+    return;
+  }
   last_scan_time_ = msg->header.stamp;
   current_scan_frame_id_ = msg->header.frame_id;
 
   pcl::PointCloud<pcl::PointXYZ>::Ptr scan(new pcl::PointCloud<pcl::PointXYZ>());
   pcl::fromROSMsg(*msg, *scan);
 
-  // 累积几帧点云，提高点云密度，增强匹配效果
-  *accumulated_cloud_ += *scan;
+  if (has_initial_pose_ && !scan->empty()) {
+    *accumulated_cloud_ += *scan;
+  }
 }
 
 void SmallGicpRelocalizationNode::performRegistration()
 {
-  if (accumulated_cloud_->empty()) {
-    RCLCPP_WARN(this->get_logger(), "No accumulated points to process.");
+  if (!has_initial_pose_ || accumulated_cloud_->size() < 20) {
     return;
   }
 
@@ -169,6 +167,10 @@ void SmallGicpRelocalizationNode::performRegistration()
   source_ = small_gicp::voxelgrid_sampling_omp<
     pcl::PointCloud<pcl::PointXYZ>, pcl::PointCloud<pcl::PointCovariance>>(
     *accumulated_cloud_, registered_leaf_size_);
+  if (source_->size() <= static_cast<size_t>(num_neighbors_)) {
+    accumulated_cloud_->clear();
+    return;
+  }
 
   // 计算每个点附近 num_neighbors_ 个点的协方差矩阵
   // Estimate covariances of points
@@ -179,10 +181,6 @@ void SmallGicpRelocalizationNode::performRegistration()
   source_tree_ = std::make_shared<small_gicp::KdTree<pcl::PointCloud<pcl::PointCovariance>>>(
     source_, small_gicp::KdTreeBuilderOMP(num_threads_));
 
-  if (!source_ || !source_tree_) {
-    return;
-  }
-
   // 设置 GICP 参数
   register_->reduction.num_threads = num_threads_;  // 线程数
   register_->rejector.max_dist_sq = max_dist_sq_;   // 最大距离平方
@@ -190,10 +188,21 @@ void SmallGicpRelocalizationNode::performRegistration()
 
   auto result = register_->align(*target_, *source_, *target_tree_, previous_result_t_);
 
-  if (result.converged) {
+  const double inlier_ratio = static_cast<double>(result.num_inliers) / source_->size();
+  const double mean_error = result.num_inliers > 0 ? result.error / result.num_inliers : INFINITY;
+  if (result.converged && result.T_target_source.matrix().allFinite() &&
+      inlier_ratio >= min_inlier_ratio_ && std::isfinite(mean_error) &&
+      mean_error <= max_mean_error_) {
     result_t_ = previous_result_t_ = result.T_target_source;
+    if (!localized_) {
+      RCLCPP_INFO(this->get_logger(), "GICP matched; map->odom available (inliers %.2f, error %.2f)",
+        inlier_ratio, mean_error);
+    }
+    localized_ = true;
   } else {
-    RCLCPP_WARN(this->get_logger(), "GICP did not converge.");
+    RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
+      "GICP rejected: converged=%d inliers=%.2f error=%.2f",
+      result.converged, inlier_ratio, mean_error);
   }
 
   accumulated_cloud_->clear();
@@ -201,13 +210,12 @@ void SmallGicpRelocalizationNode::performRegistration()
 
 void SmallGicpRelocalizationNode::publishTransform()
 {
-  if (result_t_.matrix().isZero()) {
+  if (!localized_ || (this->now() - last_scan_time_).seconds() > 2.0) {
     return;
   }
 
   geometry_msgs::msg::TransformStamped transform_stamped;
-  // `+ 0.1` means transform into future. according to https://robotics.stackexchange.com/a/96615
-  transform_stamped.header.stamp = last_scan_time_ + rclcpp::Duration::from_seconds(0.1);
+  transform_stamped.header.stamp = this->now();
   transform_stamped.header.frame_id = map_frame_;
   transform_stamped.child_frame_id = odom_frame_;
 
@@ -240,6 +248,10 @@ void SmallGicpRelocalizationNode::initialPoseCallback(
                                  msg->pose.pose.orientation.y, msg->pose.pose.orientation.z)
                                  .toRotationMatrix();
 
+  if (msg->header.frame_id != map_frame_ || current_scan_frame_id_.empty()) {
+    RCLCPP_WARN(this->get_logger(), "Set initial pose in map after FAST-LIO starts publishing scans");
+    return;
+  }
   try {
     auto transform =
       tf_buffer_->lookupTransform(robot_base_frame_, current_scan_frame_id_, tf2::TimePointZero);
@@ -247,6 +259,10 @@ void SmallGicpRelocalizationNode::initialPoseCallback(
     Eigen::Isometry3d map_to_odom = map_to_robot_base * robot_base_to_odom;
 
     previous_result_t_ = result_t_ = map_to_odom;
+    has_initial_pose_ = true;
+    localized_ = false;
+    accumulated_cloud_->clear();
+    RCLCPP_INFO(this->get_logger(), "Initial guess set; waiting for GICP match");
   } catch (tf2::TransformException & ex) {
     RCLCPP_WARN(
       this->get_logger(), "Could not transform initial pose from %s to %s: %s",

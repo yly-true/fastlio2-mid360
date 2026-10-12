@@ -488,7 +488,7 @@ PointCloudXYZI::Ptr pcl_wait_pub(new PointCloudXYZI());
 PointCloudXYZI::Ptr pcl_wait_save(new PointCloudXYZI());
 void publish_frame_world(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubLaserCloudFull)
 {
-    if(scan_pub_en)
+    if(scan_pub_en || pcd_save_en)
     {
         PointCloudXYZI::Ptr laserCloudFullRes(dense_pub_en ? feats_undistort : feats_down_body);
         int size = laserCloudFullRes->points.size();
@@ -501,46 +501,17 @@ void publish_frame_world(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::Share
                                 &laserCloudWorld->points[i]);
         }
 
-        sensor_msgs::msg::PointCloud2 laserCloudmsg;
-        pcl::toROSMsg(*laserCloudWorld, laserCloudmsg);
-        // laserCloudmsg.header.stamp = ros::Time().fromSec(lidar_end_time);
-        laserCloudmsg.header.stamp = get_ros_time(lidar_end_time);
-        laserCloudmsg.header.frame_id = "camera_init";
-        pubLaserCloudFull->publish(laserCloudmsg);
-        publish_count -= PUBFRAME_PERIOD;
-    }
-
-    /**************** save map ****************/
-    /* 1. make sure you have enough memories
-    /* 2. noted that pcd save will influence the real-time performences **/
-    /*
-    if (pcd_save_en)
-    {
-        int size = feats_undistort->points.size();
-        PointCloudXYZI::Ptr laserCloudWorld( \
-                        new PointCloudXYZI(size, 1));
-
-        for (int i = 0; i < size; i++)
+        if (pcd_save_en) *pcl_wait_save += *laserCloudWorld;
+        if (scan_pub_en)
         {
-            RGBpointBodyToWorld(&feats_undistort->points[i], \
-                                &laserCloudWorld->points[i]);
-        }
-        *pcl_wait_save += *laserCloudWorld;
-
-        static int scan_wait_num = 0;
-        scan_wait_num ++;
-        if (pcl_wait_save->size() > 0 && pcd_save_interval > 0  && scan_wait_num >= pcd_save_interval)
-        {
-            pcd_index ++;
-            string all_points_dir(string(string(ROOT_DIR) + "PCD/scans_") + to_string(pcd_index) + string(".pcd"));
-            pcl::PCDWriter pcd_writer;
-            cout << "current scan saved to /PCD/" << all_points_dir << endl;
-            pcd_writer.writeBinary(all_points_dir, *pcl_wait_save);
-            pcl_wait_save->clear();
-            scan_wait_num = 0;
+            sensor_msgs::msg::PointCloud2 laserCloudmsg;
+            pcl::toROSMsg(*laserCloudWorld, laserCloudmsg);
+            laserCloudmsg.header.stamp = get_ros_time(lidar_end_time);
+            laserCloudmsg.header.frame_id = "camera_init";
+            pubLaserCloudFull->publish(laserCloudmsg);
+            publish_count -= PUBFRAME_PERIOD;
         }
     }
-    */
 }
 
 void publish_frame_body(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubLaserCloudFull_body)
@@ -606,10 +577,11 @@ void publish_map(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub
     // pubLaserCloudMap->publish(laserCloudMap);
 }
 
-void save_to_pcd()
+bool save_to_pcd()
 {
+    if (pcl_wait_save->empty()) return false;
     pcl::PCDWriter pcd_writer;
-    pcd_writer.writeBinary(map_file_path, *pcl_wait_pub);
+    return pcd_writer.writeBinary(map_file_path, *pcl_wait_save) == 0;
 }
 
 template<typename T>
@@ -747,8 +719,6 @@ void h_share_model(state_ikfom &s, esekfom::dyn_share_datastruct<double> &ekfom_
     if (effct_feat_num < 1)
     {
         ekfom_data.valid = false;
-        std::cerr << "No Effective Points!" << std::endl;
-        // ROS_WARN("No Effective Points! \n");
         return;
     }
 
@@ -1049,7 +1019,14 @@ private:
             /*** iterated state estimation ***/
             double t_update_start = omp_get_wtime();
             double solve_H_time = 0;
+            effct_feat_num = 0;
             kf.update_iterated_dyn_share_modified(LASER_POINT_COV, solve_H_time);
+            if (effct_feat_num < 10)
+            {
+                RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
+                    "LiDAR matching lost (%d effective points); scan not added to map", effct_feat_num);
+                return;
+            }
             state_point = kf.get_x();
             euler_cur = SO3ToEuler(state_point.rot);
             pos_lid = state_point.pos + state_point.rot * state_point.offset_T_L_I;
@@ -1070,7 +1047,7 @@ private:
             
             /******* Publish points *******/
             if (path_en)                         publish_path(pubPath_);
-            if (scan_pub_en)      publish_frame_world(pubLaserCloudFull_);
+            if (scan_pub_en || pcd_save_en) publish_frame_world(pubLaserCloudFull_);
             if (scan_pub_en && scan_body_pub_en) publish_frame_body(pubLaserCloudFull_body_);
             if (effect_pub_en) publish_effect_world(pubLaserCloudEffect_);
             // if (map_pub_en) publish_map(pubLaserCloudMap_);
@@ -1117,9 +1094,8 @@ private:
         RCLCPP_INFO(this->get_logger(), "Saving map to %s...", map_file_path.c_str());
         if (pcd_save_en)
         {
-            save_to_pcd();
-            res->success = true;
-            res->message = "Map saved.";
+            res->success = save_to_pcd();
+            res->message = res->success ? "Map saved." : "Map is empty or write failed.";
         }
         else
         {
@@ -1164,18 +1140,6 @@ int main(int argc, char** argv)
 
     if (rclcpp::ok())
         rclcpp::shutdown();
-    /**************** save map ****************/
-    /* 1. make sure you have enough memories
-    /* 2. pcd save will largely influence the real-time performences **/
-    if (pcl_wait_save->size() > 0 && pcd_save_en)
-    {
-        string file_name = string("scans.pcd");
-        string all_points_dir(string(string(ROOT_DIR) + "PCD/") + file_name);
-        pcl::PCDWriter pcd_writer;
-        cout << "current scan saved to /PCD/" << file_name<<endl;
-        pcd_writer.writeBinary(all_points_dir, *pcl_wait_save);
-    }
-
     if (runtime_pos_log)
     {
         vector<double> t, s_vec, s_vec2, s_vec3, s_vec4, s_vec5, s_vec6, s_vec7;    

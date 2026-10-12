@@ -1,0 +1,59 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Enabled: true
+      Name: Grid
+      Plane: XY
+      Cell Size: 1
+    - Class: rviz_default_plugins/PointCloud2
+      Enabled: true
+      Name: Saved 3D map
+      Topic:
+        Value: /global_map
+        Reliability Policy: Reliable
+        Durability Policy: Transient Local
+      Style: Flat Squares
+      Size (Pixels): 2
+      Color Transformer: FlatColor
+      Color: 180; 180; 180
+    - Class: rviz_default_plugins/PointCloud2
+      Enabled: true
+      Name: Live FAST-LIO cloud
+      Topic:
+        Value: /cloud_registered
+        Reliability Policy: Reliable
+        Durability Policy: Volatile
+      Style: Flat Squares
+      Size (Pixels): 3
+      Color Transformer: FlatColor
+      Color: 0; 255; 0
+    - Class: rviz_default_plugins/TF
+      Enabled: true
+      Name: TF
+      Show Axes: true
+      Show Names: true
+  Global Options:
+    Fixed Frame: map
+    Background Color: 30; 30; 30
+    Frame Rate: 30
+  Tools:
+    - Class: rviz_default_plugins/Interact
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/SetInitialPose
+      Topic:
+        Value: /initialpose
+    - Class: rviz_default_plugins/FocusCamera
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 20
+      Focal Point:
+        X: 0
+        Y: 0
+        Z: 0
+      Pitch: 0.8
+      Yaw: 0.8

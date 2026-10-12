@@ -27,6 +27,7 @@
 #include <chrono>
 #include <csignal>
 #include <iostream>
+#include <stdexcept>
 #include <thread>
 #include <vector>
 
@@ -96,9 +97,11 @@ DriverNode::DriverNode(const rclcpp::NodeOptions & node_options)
       DRIVER_INFO(*this, "Init lds lidar success!");
     } else {
       DRIVER_ERROR(*this, "Init lds lidar fail!");
+      throw std::runtime_error("Livox SDK initialization failed; check Ethernet IP and radar power");
     }
   } else {
     DRIVER_ERROR(*this, "Invalid data src (%d), please check the launch file", data_src);
+    throw std::runtime_error("Invalid Livox data source");
   }
 
   pointclouddata_poll_thread_ =

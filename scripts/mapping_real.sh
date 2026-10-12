@@ -1,60 +1,30 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_ROOT="$(dirname -- "$SCRIPT_DIR")"
-cd "$WORKSPACE_ROOT" || exit 1
+MAP_OUTPUT="${MAP_OUTPUT:-$WORKSPACE_ROOT/src/me_nav2_bringup/pcd/mid360_$(date +%Y%m%d_%H%M%S).pcd}"
+mkdir -p "$(dirname -- "$MAP_OUTPUT")"
 
-# 实机建图启动脚本
+open_ros_window() {
+  local title="$1"
+  shift
+  gnome-terminal --title="$title" -- bash -c '
+    cd "$1" || exit 1
+    source /opt/ros/humble/setup.bash || exit 1
+    source install/setup.bash || exit 1
+    shift
+    "$@"
+    exec bash
+  ' bash "$WORKSPACE_ROOT" "$@"
+}
 
-# point_lio
-# gnome-terminal --title="Livox Point-LIO 驱动" -- bash -c "
-# source install/setup.bash;
-# ros2 launch livox_ros_driver2 point_lio_msg_MID360_launch.py"
+open_ros_window "MID360 驱动" ros2 launch livox_ros_driver2 fast_lio_msg_MID360_launch.py
+open_ros_window "FAST-LIO 建图" ros2 launch fast_lio mapping.launch.py \
+  use_sim_time:=false config_file:=mid360.yaml rviz:=true "map_file_path:=$MAP_OUTPUT"
+open_ros_window "Scout 与 MID360 TF" ros2 launch gld_robot_description scout_mid360_description_launch.py
 
-# gnome-terminal --title="Point-LIO 里程计" -- bash -c "
-# source install/setup.bash;
-# ros2 launch point_lio point_lio.launch.py \
-#   point_lio_cfg_dir:=/home/pio/Nav2_3D_ws/src/localization/point_lio/config/mid360_real.yaml"
-
-# gnome-terminal --title="Point-LIO lio_interface" -- bash -c "
-# source install/setup.bash;
-# ros2 launch lio_interface pointlio_lio_interface_launch.py"
-
-
-# fast_lio
-gnome-terminal --title="Livox Fast-LIO 驱动" -- bash -c "
-source install/setup.bash;
-ros2 launch livox_ros_driver2 fast_lio_msg_MID360_launch.py"
-
-gnome-terminal --title="FAST-LIO 里程计" -- bash -c "
-source install/setup.bash;
-ros2 launch fast_lio mapping.launch.py"
-
-gnome-terminal --title="Fast-LIO lio_interface" -- bash -c "
-source install/setup.bash;
-ros2 launch lio_interface fastlio_lio_interface_launch.py"
-
-# ---------
-
-
-gnome-terminal --title="机器人描述" -- bash -c "
-killall -9 gzserver gzclient;
-source install/setup.bash;
-ros2 launch gld_robot_description gld_robot_description_launch.py"
-
-gnome-terminal --title="sensor_scan_generation" -- bash -c "
-source install/setup.bash;
-ros2 launch sensor_scan_generation sensor_scan_generation_launch.py"
-
-gnome-terminal --title="3d点云转2d" -- bash -c "
-source install/setup.bash;
-ros2 launch me_nav2_bringup pointcloud_to_laserscan_launch.py"
-
-# gnome-terminal --title="slam_toolbox 建图" -- bash -c "
-# source install/setup.bash;
-# ros2 launch slam_toolbox online_async_launch.py"
-
-gnome-terminal --title="slam_toolbox 建图" -- bash -c "
-source install/setup.bash;
-ros2 launch slam_toolbox online_async_launch.py \
-    slam_params_file:=/home/pio/Nav2_3D_ws/src/me_nav2_bringup/config/slam_toolbox_params.yaml"
+printf '地图保存路径：%s\n' "$MAP_OUTPUT"
+printf '手持雷达请先保持静止，等 FAST-LIO 终端出现 IMU Initial Done 后再缓慢移动。\n'
+printf '建图完成后先在新终端 source 环境并运行：ros2 service call /map_save std_srvs/srv/Trigger "{}"\n'
+printf '确认 success=True 且文件已生成，再按 Ctrl-C。\n'

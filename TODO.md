@@ -1,0 +1,37 @@
+# 工位导航待做
+
+工作空间：`/home/orin-nx-1/Lidar_nav2_ws`，ROS 2 Humble。目标数据流：MID360 → FAST-LIO2 里程计 → 3D GICP 修正 `map→odom`；同一 `map` 下的 2D 占据地图 + 实时障碍 → Nav2 → Scout CAN。
+
+## 已完成
+
+- [x] MID360 点云/IMU、FAST-LIO2 和 3D GICP 在 Orin NX 上运行。
+- [x] 新地点 3D 地图保存为 `src/me_nav2_bringup/pcd/工位.pcd`，约 205 万点；3D 重定位由用户初步目视确认。长时间运动稳定性仍需装车验证。
+- [x] 重定位入口默认读取 `工位.pcd`。Scout CAN 导航入口默认 `send_control=false`、`publish_odom=false`、`publish_tf=false`。
+
+## 1. 制作同坐标系的 2D 地图（下一步）
+
+- [ ] 用 `工位.pcd` 生成**预览**：确定地面在 3D `map` 中的高度，选取会挡住车体的高度范围，过滤噪点后投影到 XY 栅格。`z=0` 不一定是地面；手持建图导致高度变化时不能使用单一全局 Z 截片。
+- [ ] 标记三类格子：固定障碍 `100`、确认可通行 `0`、未确认 `-1`。PCD 没有点不能自动证明可通行；可结合地面点和现场核对，人工修正门、通道、桌下空间、玻璃及未扫描区域。现有 `pcd2pgm` 仅生成障碍和未知，需补齐空闲区域。
+- [ ] 输出 `src/me_nav2_bringup/map/工位.pgm` 和 `工位.yaml`，分辨率暂用 0.05 m；PGM 的原点、像素方向与 PCD 的 `map` XY 一致，不额外旋转或平移地图。
+- [ ] 在 RViz 叠加 2D 地图、3D 地图和已重定位的机器人位置；现场核对墙、门、通道、机器人起点和终点。检查最窄通道在考虑车体宽度后仍可通过。**通过条件：** 2D 墙体与 3D 墙体重合，车体位于可通行格，未知区不会被误规划为通路。
+
+## 2. 装车后核对定位与感知
+
+- [ ] 固定 MID360；测量 `base_footprint→base_link→livox_frame` 实际外参并更新 URDF。当前 `base_link→livox_frame` 仅配置 Z = 0.18 m，需核对实物；测量车体长宽高和离地间隙。
+- [ ] 在车上静止、直行、转弯、回到起点，确认 FAST-LIO2 位姿无突跳，GICP 持续匹配，`map→odom→base_footprint` 连续且 TF 没有重复发布者。记录走一圈后的重定位误差。
+- [ ] 检查 `/odom` 唯一发布者、坐标系与机体坐标下的 `vx/vy/wz`；当前 `/odom` 由 `sensor_scan_generation` 对位姿差分得到，底盘节点保持不发布 `/odom`。
+- [ ] 检查 `/registered_scan→/scan` 是否覆盖机器人前方及侧方的近距离障碍；按装车高度调整 `Pointcloud2d_3d.yaml` 的 `min_height/max_height`。当前范围 0.2–1.0 m 是示例，不保证能看到低矮障碍。修复或阻止 TF 查询失败时 `sensor_scan_generation` 用单位变换继续发布的情况。
+
+## 3. 接 Nav2，先只看规划
+
+- [ ] 将 Nav2 的地图路径改为 `工位.yaml`，不再使用示例 `nav_test_4_27.yaml`；核对 `map_server` 发布的 `/map` 与 3D 定位的 `map` 重合。
+- [ ] 把 `nav2_params.yaml` 中 `planner_server.GridBased.allow_unknown: true` 改为 `false`；按实测车体尺寸校准 `footprint`、膨胀半径、速度和加速度。确认全局静态层使用工位地图，局部障碍层使用实时 `/scan`。
+- [ ] 保持 `SCOUT_SEND_CONTROL=false`，启动导航入口，在 RViz 给几个位于已知空闲区的目标。**通过条件：** 能生成不穿墙、不穿未知区的路径；移动障碍出现在局部代价地图中；机器人位置与地图重合；`/cmd_vel` 方向符合预期。
+
+## 4. 底盘实车闭环
+
+- [ ] 核对 Scout 型号、CAN 500 kbit/s、控制帧协议、反馈帧的速度符号和量纲；确认急停、零速超时以及通信断开后的停车行为。
+- [ ] 在空旷场地低速验证前进、后退、转弯和停止，再启用 `SCOUT_SEND_CONTROL=true` 进行短距离导航。逐步检查刹停距离、定位丢失处理和动态障碍避让。
+- [ ] 通过上述检查后再把实际启动命令、地图路径和必要参数写入 `README.md`，清除不适用的示例配置。
+
+> 当前可运行 3D 重定位；`工位` 的 2D 地图尚未制作，现有导航配置仍包含示例地图和未校准参数，不能据此判定实车导航已完成。

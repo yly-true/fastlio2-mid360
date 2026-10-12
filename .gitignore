@@ -15,4 +15,5 @@ __pycache__/
 
 .claude/
 .codex
+.vscode/
 CLAUDE.md

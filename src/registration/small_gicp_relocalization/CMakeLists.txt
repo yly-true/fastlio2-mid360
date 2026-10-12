@@ -37,6 +37,12 @@ if(NOT small_gicp_FOUND)
   fetchcontent_makeavailable(small_gicp)
 endif()
 
+if(TARGET small_gicp::small_gicp)
+  set(SMALL_GICP_TARGET small_gicp::small_gicp)
+else()
+  set(SMALL_GICP_TARGET small_gicp)
+endif()
+
 ###########
 ## Build ##
 ###########
@@ -47,7 +53,7 @@ ament_auto_add_library(${PROJECT_NAME} SHARED
 
 target_link_libraries(${PROJECT_NAME}
   OpenMP::OpenMP_CXX
-  small_gicp
+  ${SMALL_GICP_TARGET}
 )
 
 rclcpp_components_register_node(${PROJECT_NAME}
@@ -73,4 +79,5 @@ endif()
 ament_auto_package(
   INSTALL_TO_SHARE
   launch
+  rviz
 )

@@ -8,7 +8,6 @@ SensorScanGeneration::SensorScanGeneration(const rclcpp::NodeOptions & options)
 
     lidar_frame_ = this->declare_parameter<std::string>("lidar_frame", "livox_frame");
     base_footprint_frame_ = this->declare_parameter<std::string>("base_footprint_frame", "base_footprint");
-    chassis_frame_ = this->declare_parameter<std::string>("chassis_frame", "chassis");
 
     tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
     tf_listener_ = std::make_unique<tf2_ros::TransformListener>(*tf_buffer_);
@@ -50,9 +49,6 @@ SensorScanGeneration::~SensorScanGeneration()
 /**
  * @brief 获取 odom 和 lidar_frame 之间的变换;
  *        获取 lidar_frame 和 base_footprint 之间的变换;
- *        获取 lidar_frame 和 chassis 之间的变换;
- * 
- *        计算 odom 和 chassis 之间的变换;
  *        计算 odom 和 base_footprint 之间的变换;
  * 
  *        发布 odom 和 base_footprint 之间的变换;
@@ -63,17 +59,13 @@ void SensorScanGeneration::laserCloudAndOdometryHandler(
     const sensor_msgs::msg::PointCloud2::ConstSharedPtr & pcd_msg)
 {
     RCLCPP_INFO(this->get_logger(), BLU "Received synchronized odometry and point cloud messages" RST);
-    tf2::Transform tf_lidar_to_chassis;
-    tf2::Transform tf_odom_to_chassis;
     tf2::Transform tf_odom_to_base_footprint_;
     tf2::Transform tf_odom_to_lidar;
 
     tf2::fromMsg(odometry_msg->pose.pose, tf_odom_to_lidar);
-    tf_lidar_to_base_footprint_ = getTransform(lidar_frame_, base_footprint_frame_, pcd_msg->header.stamp);
-    tf_lidar_to_chassis = getTransform(lidar_frame_, chassis_frame_, pcd_msg->header.stamp);
-
-    tf_odom_to_chassis = tf_odom_to_lidar * tf_lidar_to_chassis;
-    tf_odom_to_base_footprint_ = tf_odom_to_lidar * tf_lidar_to_base_footprint_;
+    const auto tf_lidar_to_base_footprint =
+      getTransform(lidar_frame_, base_footprint_frame_, pcd_msg->header.stamp);
+    tf_odom_to_base_footprint_ = tf_odom_to_lidar * tf_lidar_to_base_footprint;
 
     publishTransform(
     tf_odom_to_base_footprint_, odometry_msg->header.frame_id, base_footprint_frame_, pcd_msg->header.stamp);
@@ -90,7 +82,7 @@ tf2::Transform SensorScanGeneration::getTransform(
 {
     try {
     auto transform_stamped = tf_buffer_->lookupTransform(
-        target_frame, source_frame, rclcpp::Time(0), rclcpp::Duration::from_seconds(0.5));
+        target_frame, source_frame, time, rclcpp::Duration::from_seconds(0.5));
     tf2::Transform transform;
     tf2::fromMsg(transform_stamped.transform, transform);
     return transform;
@@ -127,31 +119,36 @@ void SensorScanGeneration::publishOdometry(
   out.pose.pose.position.z = origin.z();
   out.pose.pose.orientation = tf2::toMsg(transform.getRotation());
 
-  static tf2::Transform previous_transform;
-  static auto previous_time = std::chrono::steady_clock::now();
-  const auto current_time = std::chrono::steady_clock::now();
+  const int64_t stamp_ns = stamp.nanoseconds();
+  const double dt = (stamp_ns - previous_stamp_ns_) * 1e-9;
 
-  const double dt =
-    std::chrono::duration_cast<std::chrono::nanoseconds>(current_time - previous_time).count() *
-    1e-9;
+  if (has_previous_odometry_ && dt > 0.0) {
+    const auto velocity_odom =
+      (transform.getOrigin() - previous_transform_.getOrigin()) / dt;
+    const auto velocity_base = transform.getRotation().inverse() * velocity_odom;
 
-  if (dt > 0) {
-    const auto linear_velocity = (transform.getOrigin() - previous_transform.getOrigin()) / dt;
+    tf2::Quaternion rotation_delta =
+      transform.getRotation() * previous_transform_.getRotation().inverse();
+    rotation_delta.normalize();
+    if (rotation_delta.w() < 0.0) {
+      rotation_delta = tf2::Quaternion(
+        -rotation_delta.x(), -rotation_delta.y(),
+        -rotation_delta.z(), -rotation_delta.w());
+    }
+    const auto angular_odom = rotation_delta.getAxis() * rotation_delta.getAngle() / dt;
+    const auto angular_base = transform.getRotation().inverse() * angular_odom;
 
-    const tf2::Quaternion q_diff =
-      transform.getRotation() * previous_transform.getRotation().inverse();
-    const auto angular_velocity = q_diff.getAxis() * q_diff.getAngle() / dt;
-
-    out.twist.twist.linear.x = linear_velocity.x();
-    out.twist.twist.linear.y = linear_velocity.y();
-    out.twist.twist.linear.z = linear_velocity.z();
-    out.twist.twist.angular.x = angular_velocity.x();
-    out.twist.twist.angular.y = angular_velocity.y();
-    out.twist.twist.angular.z = angular_velocity.z();
+    out.twist.twist.linear.x = velocity_base.x();
+    out.twist.twist.linear.y = velocity_base.y();
+    out.twist.twist.linear.z = velocity_base.z();
+    out.twist.twist.angular.x = angular_base.x();
+    out.twist.twist.angular.y = angular_base.y();
+    out.twist.twist.angular.z = angular_base.z();
   }
 
-  previous_transform = transform;
-  previous_time = current_time;
+  previous_transform_ = transform;
+  previous_stamp_ns_ = stamp_ns;
+  has_previous_odometry_ = true;
 
   pub_base_footprint_odometry_->publish(out);
 }

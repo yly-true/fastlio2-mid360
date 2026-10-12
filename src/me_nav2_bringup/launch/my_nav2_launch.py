@@ -1,8 +1,10 @@
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument
 from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 def generate_launch_description():
@@ -12,7 +14,8 @@ def generate_launch_description():
 
     # 配置文件与地图路径
     params_file = os.path.join(me_share_path, 'config', 'nav2_params.yaml')
-    map_yaml_file = os.path.join(me_share_path, 'map', 'nav_test_4_27.yaml')
+    default_map_yaml_file = os.path.join(me_share_path, 'map', 'nav_test_4_27.yaml')
+    map_yaml_file = LaunchConfiguration('map_yaml_file')
     rviz_file = os.path.join(me_share_path, 'rviz', 'nav2.rviz')
     
     # 是否使用仿真时间
@@ -64,8 +67,9 @@ def generate_launch_description():
         arguments=["-d", rviz_file], 
     )
 
-    # 组合 LaunchDescription 返回
-    ld = LaunchDescription()
+    ld = LaunchDescription([
+        DeclareLaunchArgument('map_yaml_file', default_value=default_map_yaml_file),
+    ])
     ld.add_action(navigation_cmd)
     ld.add_action(map_server_cmd)
     ld.add_action(lifecycle_manager_map_cmd)

@@ -155,7 +155,7 @@ void Pcd2PgmNode::setMapTopicMsg(
 
   msg.info.width = std::ceil((x_max - x_min) / map_resolution_);
   msg.info.height = std::ceil((y_max - y_min) / map_resolution_);
-  msg.data.assign(msg.info.width * msg.info.height, 0);
+  msg.data.assign(msg.info.width * msg.info.height, -1);
 
   for (const auto & point : cloud->points) {
     int i = std::floor((point.x - x_min) / map_resolution_);
