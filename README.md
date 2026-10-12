@@ -1,6 +1,6 @@
 # MID360 + FAST-LIO2 + 3D 重定位（ROS 2 Humble / Orin NX）
 
-实车部署工作空间是 `/home/orin-nx-1/Lidar_nav2_ws`，设备为 ARM64。MID360 接 `enP8p1s0`，主机地址 `192.168.1.50/24`，雷达地址 `192.168.1.3`；换设备或网卡时先核对 `src/livox_ros_driver2/config/MID360_config.json` 和主机网络配置。统一启动入口是 `me_nav2_bringup/launch/real.launch.py`，通过 `mode:=mapping|relocalization|nav` 选择模式。默认 colcon 只识别 6 个包：`fast_lio`、`livox_ros_driver2`、`me_nav2_bringup`、`small_gicp_relocalization`、`scout_can`、`pcd2pgm`；备用源码由 `COLCON_IGNORE` 排除。
+实车部署工作空间是 `/home/orin-nx-1/Lidar_nav2_ws`，设备为 ARM64。MID360 接 `enP8p1s0`，主机地址 `192.168.1.50/24`，雷达地址 `192.168.1.3`；换设备或网卡时先核对 `src/livox_ros_driver2/config/MID360_config.json` 和主机网络配置。统一 launch 入口是 `me_nav2_bringup/launch/real.launch.py`，支持 `mode:=mapping|relocalization|nav`。`src` 只保留 7 个包：`livox_ros_driver2`、`fast_lio`、`small_gicp_relocalization`、`me_nav2_bringup`、`pcd2pgm`、`scout_can`、`keyboard_teleop`。`registration` 只是“点云配准”源码目录；其中当前唯一使用的包是 `small_gicp_relocalization`。
 
 ## 编译
 
@@ -73,3 +73,19 @@ NAV2_MAP_YAML=/绝对路径/工位.yaml ./scripts/nav2_real.sh
 ```
 
 统一入口也可直接运行 `ros2 launch me_nav2_bringup real.launch.py mode:=nav map_yaml_file:=/绝对路径/工位.yaml`。脚本默认 `SCOUT_SEND_CONTROL=false`，不发送底盘控制帧；`can0` 未启动时跳过 Scout CAN 节点。完成 [TODO.md](TODO.md) 中的地图、感知、车体参数、CAN 和急停检查后，才启用 `SCOUT_SEND_CONTROL=true`。
+
+## 开车建图
+
+先确认 Scout 型号、CAN 协议和急停可用，设置 `can0` 为 500 kbit/s 并启动。第一个终端启动 MID360、FAST-LIO 和 Scout CAN：
+
+```bash
+SCOUT_SEND_CONTROL=true ./scripts/mapping_real.sh
+```
+
+等 FAST-LIO 输出 `IMU Initial Done` 后，在第二个已 source 环境的**交互式终端**运行独立的键盘控制包：
+
+```bash
+ros2 run keyboard_teleop keyboard_teleop
+```
+
+`W/S` 前后、`A/D` 转向、`Q/E` 横移，空格停止，`X` 退出。速度固定为 0.2 m/s、0.5 rad/s，松键约 0.25 秒后发零速度；`scout_can` 另有 500 ms 命令超时。用上述 `/map_save` 服务保存地图后再退出建图。键盘节点单独读取终端输入，不要与 Nav2 同时向 `/cmd_vel` 发指令。首次上车只在空旷处低速测试，结果记录在 [TODO.md](TODO.md)。

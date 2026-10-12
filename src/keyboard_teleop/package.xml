@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>keyboard_teleop</name>
+  <version>0.1.0</version>
+  <description>Terminal keyboard control for Scout via /cmd_vel.</description>
+  <maintainer email="yly@example.com">yly</maintainer>
+  <license>MIT</license>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

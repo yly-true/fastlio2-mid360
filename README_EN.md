@@ -1,4 +1,4 @@
-> Archived project notes: old simulation scripts and separate launch commands are no longer active. See [README.md](README.md) for the unified real-hardware launch.
+> Archived project notes: the optional packages, old simulation scripts, and separate launch commands described here have been removed. See [README.md](README.md) for current usage.
 
 # Lidar_nav2_ws
 

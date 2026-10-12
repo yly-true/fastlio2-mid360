@@ -4,9 +4,9 @@
 
 ## 已完成的代码与已有观察
 
-- [x] 建图、3D 重定位和 Nav2 三种模式收敛到一个 launch；默认只构建 6 个包。`/odom` 与 `/registered_scan` 由 `me_nav2_bringup/fastlio_bridge` 提供；Scout CAN 默认不发控制帧、不发布里程计或 TF。
+- [x] 建图、3D 重定位和 Nav2 由 `me_nav2_bringup` 统一启动；建图模式可同时启动 Scout CAN，键盘节点是独立包、在另一终端运行。`src` 只保留 7 个包。`/odom` 与 `/registered_scan` 由 `me_nav2_bringup/fastlio_bridge` 提供；Scout CAN 默认不发控制帧、不发布里程计或 TF。
 - [x] 第一次建图使用 `fastlio2old`，第二次使用 `fastlio2new`；导航 TF 为 `map→odom→base→livox`，`base` 与 `livox` 重合。Nav2 的全局规划已配置为不穿越未知区，启动时要求显式传入已存在的 2D 地图 YAML；规划效果仍待实测。
-- [x] 6 包构建、统一 launch 三种模式的启动配置、桥接节点与 GICP 的合成数据检查已通过；**这不等于实车整链路验证**。
+- [x] 7 包构建、桥接节点与 GICP 合成数据检查、键盘按键映射检查已通过；建图与底盘同时启动的 launch 配置也已检查。**这些检查不等于实车整链路验证**。
 - [x] 先前在 Orin NX 上观察到 MID360 点云/IMU、FAST-LIO2 里程计和 3D GICP 运行。新地点 3D 图 `src/me_nav2_bringup/pcd/工位.pcd` 已保存，重定位曾由用户初步目视确认；统一入口改造后的 Orin NX 实测仍待进行。
 
 ## 1. 制作同坐标系的 2D 地图（下一步）
@@ -34,6 +34,7 @@
 ## 4. 底盘实车闭环
 
 - [ ] 核对 Scout 型号、CAN 500 kbit/s、控制帧协议、反馈帧的速度符号和量纲；确认急停、零速超时以及通信断开后的停车行为。
+- [ ] 在空旷处运行 `SCOUT_SEND_CONTROL=true ./scripts/mapping_real.sh`，等 `IMU Initial Done` 后在另一终端运行 `ros2 run keyboard_teleop keyboard_teleop`；核对 `W/S/A/D/Q/E` 方向、松键停车和空格停止，不同时运行 Nav2 控制器。
 - [ ] 在空旷场地低速验证前进、后退、转弯和停止，再启用 `SCOUT_SEND_CONTROL=true` 进行短距离导航。逐步检查刹停距离、定位丢失处理和动态障碍避让。
 - [ ] 将现场确认的地图路径、车体参数和 Nav2/CAN 调参结果更新到 `README.md`，清除不适用的示例参数。
 

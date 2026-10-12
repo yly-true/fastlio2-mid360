@@ -1,4 +1,4 @@
-"""One entry point for MID360 mapping, 3D relocalization, and real navigation."""
+"""One entry point for MID360 mapping, relocalization, and navigation."""
 
 import os
 from datetime import datetime
@@ -11,10 +11,27 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
+def _scout_node(send_control):
+    return Node(
+        package="scout_can", executable="scout_can_node", name="scout_can",
+        output="screen", parameters=[{
+            "interface_name": "can0", "send_control": send_control,
+            "use_cmd_vel": True, "publish_odom": False,
+            "publish_tf": False, "log_frames": False,
+        }],
+    )
+
+
 def _start(context):
     mode = LaunchConfiguration("mode").perform(context)
     if mode not in ("mapping", "relocalization", "nav"):
         raise RuntimeError("mode must be mapping, relocalization, or nav")
+    start_can = LaunchConfiguration("start_can").perform(context).lower() == "true"
+    send_control = LaunchConfiguration("send_control").perform(context).lower() == "true"
+    if send_control and not start_can:
+        raise RuntimeError("send_control requires start_can:=true")
+    if mode == "relocalization" and start_can:
+        raise RuntimeError("CAN control is available in mapping and nav modes")
 
     bringup = get_package_share_directory("me_nav2_bringup")
     fast_lio = get_package_share_directory("fast_lio")
@@ -35,6 +52,8 @@ def _start(context):
     ]
 
     if mode == "mapping":
+        if start_can:
+            actions.append(_scout_node(send_control))
         if LaunchConfiguration("show_rviz").perform(context).lower() == "true":
             actions.append(Node(
                 package="rviz2", executable="rviz2", output="screen",
@@ -83,11 +102,6 @@ def _start(context):
     map_yaml = LaunchConfiguration("map_yaml_file").perform(context)
     if not os.path.isfile(map_yaml):
         raise RuntimeError(f"Checked 2D map YAML is required: {map_yaml}")
-    start_can = LaunchConfiguration("start_can").perform(context).lower() == "true"
-    send_control = LaunchConfiguration("send_control").perform(context).lower() == "true"
-    if send_control and not start_can:
-        raise RuntimeError("send_control requires start_can:=true")
-
     nav_params = os.path.join(bringup, "config", "nav2_params.yaml")
     actions.extend([
         Node(
@@ -115,14 +129,7 @@ def _start(context):
         ),
     ])
     if start_can:
-        actions.append(Node(
-            package="scout_can", executable="scout_can_node", name="scout_can",
-            output="screen", parameters=[{
-                "interface_name": "can0", "send_control": send_control,
-                "use_cmd_vel": True, "publish_odom": False,
-                "publish_tf": False, "log_frames": False,
-            }],
-        ))
+        actions.append(_scout_node(send_control))
     if LaunchConfiguration("show_rviz").perform(context).lower() == "true":
         actions.append(Node(
             package="rviz2", executable="rviz2", output="screen",
