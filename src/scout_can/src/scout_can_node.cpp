@@ -77,7 +77,7 @@ ScoutCanNode::ScoutCanNode()
   control_wz_mrad_s_ = declare_parameter<int>("control_wz_mrad_s", 0);
   control_vy_mm_s_ = declare_parameter<int>("control_vy_mm_s", 0);
   odom_frame_ = declare_parameter<std::string>("odom_frame", "odom");
-  base_frame_ = declare_parameter<std::string>("base_frame", "base_link");
+  base_frame_ = declare_parameter<std::string>("base_frame", "base");
   odom_timeout_sec_ = declare_parameter<double>("odom_timeout_sec", 0.2);
   if (!std::isfinite(odom_timeout_sec_) || odom_timeout_sec_ <= 0.0) {
     throw std::invalid_argument("odom_timeout_sec must be finite and positive");

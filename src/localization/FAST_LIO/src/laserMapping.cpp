@@ -86,6 +86,8 @@ condition_variable sig_buffer;
 
 string root_dir = ROOT_DIR;
 string map_file_path, lid_topic, imu_topic;
+string world_frame = "fastlio2old";
+bool publish_tf_en = true;
 
 double res_mean_last = 0.05, total_residual = 0.0;
 double last_timestamp_lidar = 0, last_timestamp_imu = -1.0;
@@ -507,7 +509,7 @@ void publish_frame_world(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::Share
             sensor_msgs::msg::PointCloud2 laserCloudmsg;
             pcl::toROSMsg(*laserCloudWorld, laserCloudmsg);
             laserCloudmsg.header.stamp = get_ros_time(lidar_end_time);
-            laserCloudmsg.header.frame_id = "camera_init";
+            laserCloudmsg.header.frame_id = world_frame;
             pubLaserCloudFull->publish(laserCloudmsg);
             publish_count -= PUBFRAME_PERIOD;
         }
@@ -545,7 +547,7 @@ void publish_effect_world(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::Shar
     sensor_msgs::msg::PointCloud2 laserCloudFullRes3;
     pcl::toROSMsg(*laserCloudWorld, laserCloudFullRes3);
     laserCloudFullRes3.header.stamp = get_ros_time(lidar_end_time);
-    laserCloudFullRes3.header.frame_id = "camera_init";
+    laserCloudFullRes3.header.frame_id = world_frame;
     pubLaserCloudEffect->publish(laserCloudFullRes3);
 }
 
@@ -567,13 +569,13 @@ void publish_map(rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub
     pcl::toROSMsg(*pcl_wait_pub, laserCloudmsg);
     // laserCloudmsg.header.stamp = ros::Time().fromSec(lidar_end_time);
     laserCloudmsg.header.stamp = get_ros_time(lidar_end_time);
-    laserCloudmsg.header.frame_id = "camera_init";
+    laserCloudmsg.header.frame_id = world_frame;
     pubLaserCloudMap->publish(laserCloudmsg);
 
     // sensor_msgs::msg::PointCloud2 laserCloudMap;
     // pcl::toROSMsg(*featsFromMap, laserCloudMap);
     // laserCloudMap.header.stamp = get_ros_time(lidar_end_time);
-    // laserCloudMap.header.frame_id = "camera_init";
+    // laserCloudMap.header.frame_id = world_frame;
     // pubLaserCloudMap->publish(laserCloudMap);
 }
 
@@ -599,11 +601,10 @@ void set_posestamp(T & out)
 
 void publish_odometry(const rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pubOdomAftMapped, std::unique_ptr<tf2_ros::TransformBroadcaster> & tf_br)
 {
-    odomAftMapped.header.frame_id = "camera_init";
+    odomAftMapped.header.frame_id = world_frame;
     odomAftMapped.child_frame_id = "body";
     odomAftMapped.header.stamp = get_ros_time(lidar_end_time);
     set_posestamp(odomAftMapped.pose);
-    pubOdomAftMapped->publish(odomAftMapped);
     auto P = kf.get_P();
     for (int i = 0; i < 6; i ++)
     {
@@ -615,26 +616,25 @@ void publish_odometry(const rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPt
         odomAftMapped.pose.covariance[i*6 + 4] = P(k, 1);
         odomAftMapped.pose.covariance[i*6 + 5] = P(k, 2);
     }
+    pubOdomAftMapped->publish(odomAftMapped);
 
-    geometry_msgs::msg::TransformStamped trans;
-    trans.header.frame_id = "camera_init";
-    trans.child_frame_id = "body";
-    trans.header.stamp = get_ros_time(lidar_end_time);
-    trans.transform.translation.x = odomAftMapped.pose.pose.position.x;
-    trans.transform.translation.y = odomAftMapped.pose.pose.position.y;
-    trans.transform.translation.z = odomAftMapped.pose.pose.position.z;
-    trans.transform.rotation.w = odomAftMapped.pose.pose.orientation.w;
-    trans.transform.rotation.x = odomAftMapped.pose.pose.orientation.x;
-    trans.transform.rotation.y = odomAftMapped.pose.pose.orientation.y;
-    trans.transform.rotation.z = odomAftMapped.pose.pose.orientation.z;
-    tf_br->sendTransform(trans);
+    if (publish_tf_en) {
+        geometry_msgs::msg::TransformStamped trans;
+        trans.header = odomAftMapped.header;
+        trans.child_frame_id = odomAftMapped.child_frame_id;
+        trans.transform.translation.x = odomAftMapped.pose.pose.position.x;
+        trans.transform.translation.y = odomAftMapped.pose.pose.position.y;
+        trans.transform.translation.z = odomAftMapped.pose.pose.position.z;
+        trans.transform.rotation = odomAftMapped.pose.pose.orientation;
+        tf_br->sendTransform(trans);
+    }
 }
 
 void publish_path(rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr pubPath)
 {
     set_posestamp(msg_body_pose);
     msg_body_pose.header.stamp = get_ros_time(lidar_end_time); // ros::Time().fromSec(lidar_end_time);
-    msg_body_pose.header.frame_id = "camera_init";
+    msg_body_pose.header.frame_id = world_frame;
 
     /*** if path is too large, the rvis will crash ***/
     static int jjj = 0;
@@ -776,6 +776,8 @@ public:
         this->declare_parameter<bool>("publish.scan_bodyframe_pub_en", true);
         this->declare_parameter<int>("max_iteration", 4);
         this->declare_parameter<string>("map_file_path", "");
+        this->declare_parameter<string>("world_frame", "fastlio2old");
+        this->declare_parameter<bool>("publish_tf", true);
         this->declare_parameter<string>("common.lid_topic", "/livox/lidar");
         this->declare_parameter<string>("common.imu_topic", "/livox/imu");
         this->declare_parameter<bool>("common.time_sync_en", false);
@@ -812,6 +814,8 @@ public:
         this->get_parameter_or<bool>("publish.scan_bodyframe_pub_en", scan_body_pub_en, true);
         this->get_parameter_or<int>("max_iteration", NUM_MAX_ITERATIONS, 4);
         this->get_parameter_or<string>("map_file_path", map_file_path, "");
+        this->get_parameter_or<string>("world_frame", world_frame, "fastlio2old");
+        this->get_parameter_or<bool>("publish_tf", publish_tf_en, true);
         this->get_parameter_or<string>("common.lid_topic", lid_topic, "/livox/lidar");
         this->get_parameter_or<string>("common.imu_topic", imu_topic,"/livox/imu");
         this->get_parameter_or<bool>("common.time_sync_en", time_sync_en, false);
@@ -843,7 +847,7 @@ public:
         RCLCPP_INFO(this->get_logger(), "p_pre->lidar_type %d", p_pre->lidar_type);
 
         path.header.stamp = this->get_clock()->now();
-        path.header.frame_id ="camera_init";
+        path.header.frame_id = world_frame;
 
         // /*** variables definition ***/
         // int effect_feat_num = 0, frame_num = 0;

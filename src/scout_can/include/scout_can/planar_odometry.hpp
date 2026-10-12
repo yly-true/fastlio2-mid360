@@ -5,7 +5,7 @@
 #include <cmath>
 #include <cstdint>
 
-// Velocity is expressed in base_link; pose and covariance in odom.
+// Velocity is expressed in base; pose and covariance in odom.
 struct PlanarOdometry
 {
   double x = 0.0, y = 0.0, yaw = 0.0;

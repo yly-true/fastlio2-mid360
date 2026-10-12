@@ -39,7 +39,7 @@ SmallGicpRelocalizationNode::SmallGicpRelocalizationNode(const rclcpp::NodeOptio
   this->declare_parameter("max_mean_error", 3.0);
   this->declare_parameter("map_frame", "map");
   this->declare_parameter("odom_frame", "odom");
-  this->declare_parameter("robot_base_frame", "");
+  this->declare_parameter("robot_base_frame", "base");
   this->declare_parameter("prior_pcd_file", "");
   this->declare_parameter("init_pose", std::vector<double>{});
   this->declare_parameter("input_cloud_topic", "registered_scan");
@@ -140,18 +140,20 @@ void SmallGicpRelocalizationNode::loadGlobalMap(const std::string & file_name)
 void SmallGicpRelocalizationNode::registeredPcdCallback(
   const sensor_msgs::msg::PointCloud2::SharedPtr msg)
 {
-  if (msg->header.frame_id != "camera_init") {
+  if (msg->header.frame_id != odom_frame_) {
     RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 5000,
-      "Expected FAST-LIO cloud in camera_init, got %s", msg->header.frame_id.c_str());
+      "Expected cloud in %s, got %s",
+      odom_frame_.c_str(), msg->header.frame_id.c_str());
+    return;
+  }
+  pcl::PointCloud<pcl::PointXYZ>::Ptr scan(new pcl::PointCloud<pcl::PointXYZ>());
+  pcl::fromROSMsg(*msg, *scan);
+  if (scan->empty()) {
     return;
   }
   last_scan_time_ = msg->header.stamp;
-  current_scan_frame_id_ = msg->header.frame_id;
-
-  pcl::PointCloud<pcl::PointXYZ>::Ptr scan(new pcl::PointCloud<pcl::PointXYZ>());
-  pcl::fromROSMsg(*msg, *scan);
-
-  if (has_initial_pose_ && !scan->empty()) {
+  has_scan_ = true;
+  if (has_initial_pose_) {
     *accumulated_cloud_ += *scan;
   }
 }
@@ -248,15 +250,15 @@ void SmallGicpRelocalizationNode::initialPoseCallback(
                                  msg->pose.pose.orientation.y, msg->pose.pose.orientation.z)
                                  .toRotationMatrix();
 
-  if (msg->header.frame_id != map_frame_ || current_scan_frame_id_.empty()) {
+  if (msg->header.frame_id != map_frame_ || !has_scan_) {
     RCLCPP_WARN(this->get_logger(), "Set initial pose in map after FAST-LIO starts publishing scans");
     return;
   }
   try {
-    auto transform =
-      tf_buffer_->lookupTransform(robot_base_frame_, current_scan_frame_id_, tf2::TimePointZero);
-    Eigen::Isometry3d robot_base_to_odom = tf2::transformToEigen(transform.transform);
-    Eigen::Isometry3d map_to_odom = map_to_robot_base * robot_base_to_odom;
+    const auto transform =
+      tf_buffer_->lookupTransform(odom_frame_, robot_base_frame_, tf2::TimePointZero);
+    const Eigen::Isometry3d map_to_odom =
+      map_to_robot_base * tf2::transformToEigen(transform.transform).inverse();
 
     previous_result_t_ = result_t_ = map_to_odom;
     has_initial_pose_ = true;
@@ -266,7 +268,7 @@ void SmallGicpRelocalizationNode::initialPoseCallback(
   } catch (tf2::TransformException & ex) {
     RCLCPP_WARN(
       this->get_logger(), "Could not transform initial pose from %s to %s: %s",
-      robot_base_frame_.c_str(), current_scan_frame_id_.c_str(), ex.what());
+      robot_base_frame_.c_str(), odom_frame_.c_str(), ex.what());
   }
 }
 

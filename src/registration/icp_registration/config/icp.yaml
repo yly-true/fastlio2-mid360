@@ -6,7 +6,7 @@
     pcd_path: "/home/gldrobot/pb_rm_simulation-main/src/rm_nav_bringup/PCD/HOME_DAO.pcd"
     map_frame_id: "map"
     odom_frame_id: "odom"
-    laser_frame_id: "livox_frame"
+    laser_frame_id: "livox"
     pointcloud_topic: "/livox/lidar/pointcloud"
     thresh: 0.1
     # xy_offset: 0.2

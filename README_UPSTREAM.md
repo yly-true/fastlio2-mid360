@@ -1,3 +1,5 @@
+> 历史资料：这里的旧仿真脚本和分散启动命令已停用。当前实车入口见 [README.md](README.md)，统一使用 `me_nav2_bringup/real.launch.py`。
+
 # Lidar_nav2_ws
 
 [English Documentation](./README_EN.md)

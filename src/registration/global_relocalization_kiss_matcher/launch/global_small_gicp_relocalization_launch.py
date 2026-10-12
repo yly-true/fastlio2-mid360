@@ -26,9 +26,9 @@ def generate_launch_description():
                 "max_dist_sq": 1.0,
                 "map_frame": "map",
                 "odom_frame": "odom",
-                "base_frame": "base_footprint",
-                "lidar_frame": "livox_frame",
-                "robot_base_frame": "base_footprint",
+                "base_frame": "base",
+                "lidar_frame": "livox",
+                "robot_base_frame": "base",
                 "prior_pcd_file": map_pcd,
                 "input_cloud_topic": "/registered_scan",
             }

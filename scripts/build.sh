@@ -10,8 +10,4 @@ source /opt/ros/humble/setup.bash
 export LD_LIBRARY_PATH="/usr/lib/aarch64-linux-gnu:/usr/local/lib:${LD_LIBRARY_PATH:-}"
 export MAKEFLAGS="-j4 -l4"
 
-colcon build --symlink-install --parallel-workers 1 \
-  --packages-up-to \
-    livox_ros_driver2 fast_lio lio_interface sensor_scan_generation \
-    me_nav2_bringup small_gicp_relocalization scout_can gld_robot_description pcd2pgm \
-  --cmake-args -DCMAKE_BUILD_TYPE=Release
+colcon build --parallel-workers 1 --cmake-args -DCMAKE_BUILD_TYPE=Release

@@ -1,3 +1,5 @@
+> Archived setup notes: old simulation scripts and separate launch commands are no longer active. See [README.md](README.md) for the unified real-hardware launch.
+
 # Lidar_nav2_ws Environment Setup
 
 [![ROS2](https://img.shields.io/badge/ROS2-Humble-22313F?logo=ros)](https://docs.ros.org/en/humble/)

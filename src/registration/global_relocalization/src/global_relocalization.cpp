@@ -8,9 +8,9 @@ GlobalRelocalization::GlobalRelocalization() : Node("global_relocalization")
   max_dist_sq_ = 1.0;
   map_frame_ = "map";
   odom_frame_ = "odom";
-  robot_base_frame_ = "base_footprint";
-  base_frame_ = "base_footprint";
-  lidar_frame_ = "livox_frame";
+  robot_base_frame_ = "base";
+  base_frame_ = "base";
+  lidar_frame_ = "livox";
   global_leaf_size_ = 0.25;
   registered_leaf_size_ = 0.25;
   num_threads_ = 4;

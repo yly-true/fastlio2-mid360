@@ -24,7 +24,7 @@ Visualization Manager:
       Enabled: true
       Name: Live FAST-LIO cloud
       Topic:
-        Value: /cloud_registered
+        Value: /registered_scan
         Reliability Policy: Reliable
         Durability Policy: Volatile
       Style: Flat Squares

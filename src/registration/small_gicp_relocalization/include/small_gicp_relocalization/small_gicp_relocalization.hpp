@@ -63,8 +63,8 @@ private:
   std::string odom_frame_;
   std::string prior_pcd_file_;
   std::string robot_base_frame_;
-  std::string current_scan_frame_id_;
   std::string input_cloud_topic_;
+  bool has_scan_{false};
   bool has_initial_pose_{false};
   bool localized_{false};
   rclcpp::Time last_scan_time_{0, 0, RCL_ROS_TIME};

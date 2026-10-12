@@ -1,3 +1,5 @@
+> Archived project notes: old simulation scripts and separate launch commands are no longer active. See [README.md](README.md) for the unified real-hardware launch.
+
 # Lidar_nav2_ws
 
 A ROS 2-based 3D LiDAR autonomous navigation system
