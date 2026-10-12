@@ -58,13 +58,21 @@ void SensorScanGeneration::laserCloudAndOdometryHandler(
     const nav_msgs::msg::Odometry::ConstSharedPtr & odometry_msg,
     const sensor_msgs::msg::PointCloud2::ConstSharedPtr & pcd_msg)
 {
-    RCLCPP_INFO(this->get_logger(), BLU "Received synchronized odometry and point cloud messages" RST);
     tf2::Transform tf_odom_to_base_footprint_;
     tf2::Transform tf_odom_to_lidar;
 
     tf2::fromMsg(odometry_msg->pose.pose, tf_odom_to_lidar);
-    const auto tf_lidar_to_base_footprint =
-      getTransform(lidar_frame_, base_footprint_frame_, pcd_msg->header.stamp);
+    tf2::Transform tf_lidar_to_base_footprint;
+    try {
+      const auto transform = tf_buffer_->lookupTransform(
+        lidar_frame_, base_footprint_frame_, rclcpp::Time(pcd_msg->header.stamp),
+        rclcpp::Duration::from_seconds(0.5));
+      tf2::fromMsg(transform.transform, tf_lidar_to_base_footprint);
+    } catch (const tf2::TransformException & ex) {
+      RCLCPP_WARN_THROTTLE(
+        get_logger(), *get_clock(), 2000, "Missing lidar-to-base TF; skipping frame: %s", ex.what());
+      return;
+    }
     tf_odom_to_base_footprint_ = tf_odom_to_lidar * tf_lidar_to_base_footprint;
 
     publishTransform(
@@ -75,21 +83,6 @@ void SensorScanGeneration::laserCloudAndOdometryHandler(
     sensor_msgs::msg::PointCloud2 out;
     pcl_ros::transformPointCloud(lidar_frame_, tf_odom_to_lidar.inverse(), *pcd_msg, out);
     pub_laser_cloud_->publish(out);
-}
-
-tf2::Transform SensorScanGeneration::getTransform(
-  const std::string & target_frame, const std::string & source_frame, const rclcpp::Time & time)
-{
-    try {
-    auto transform_stamped = tf_buffer_->lookupTransform(
-        target_frame, source_frame, time, rclcpp::Duration::from_seconds(0.5));
-    tf2::Transform transform;
-    tf2::fromMsg(transform_stamped.transform, transform);
-    return transform;
-    } catch (tf2::TransformException & ex) {
-    RCLCPP_WARN(this->get_logger(), "TF lookup failed: %s. Returning identity.", ex.what());
-    return tf2::Transform::getIdentity();
-    }
 }
 
 void SensorScanGeneration::publishTransform(

@@ -7,6 +7,7 @@
 - [x] MID360 点云/IMU、FAST-LIO2 和 3D GICP 在 Orin NX 上运行。
 - [x] 新地点 3D 地图保存为 `src/me_nav2_bringup/pcd/工位.pcd`，约 205 万点；3D 重定位由用户初步目视确认。长时间运动稳定性仍需装车验证。
 - [x] 重定位入口默认读取 `工位.pcd`。Scout CAN 导航入口默认 `send_control=false`、`publish_odom=false`、`publish_tf=false`。
+- [x] Nav2 不再默认加载旧示例地图，规划器不穿越未知区；只看规划时不要求 `can0` 已启动。外参 TF 查不到时跳过该帧，不发布错误里程计。
 
 ## 1. 制作同坐标系的 2D 地图（下一步）
 
@@ -20,12 +21,12 @@
 - [ ] 固定 MID360；测量 `base_footprint→base_link→livox_frame` 实际外参并更新 URDF。当前 `base_link→livox_frame` 仅配置 Z = 0.18 m，需核对实物；测量车体长宽高和离地间隙。
 - [ ] 在车上静止、直行、转弯、回到起点，确认 FAST-LIO2 位姿无突跳，GICP 持续匹配，`map→odom→base_footprint` 连续且 TF 没有重复发布者。记录走一圈后的重定位误差。
 - [ ] 检查 `/odom` 唯一发布者、坐标系与机体坐标下的 `vx/vy/wz`；当前 `/odom` 由 `sensor_scan_generation` 对位姿差分得到，底盘节点保持不发布 `/odom`。
-- [ ] 检查 `/registered_scan→/scan` 是否覆盖机器人前方及侧方的近距离障碍；按装车高度调整 `Pointcloud2d_3d.yaml` 的 `min_height/max_height`。当前范围 0.2–1.0 m 是示例，不保证能看到低矮障碍。修复或阻止 TF 查询失败时 `sensor_scan_generation` 用单位变换继续发布的情况。
+- [ ] 检查 `/registered_scan→/scan` 是否覆盖机器人前方及侧方的近距离障碍；按装车高度调整 `Pointcloud2d_3d.yaml` 的 `min_height/max_height`。当前范围 0.2–1.0 m 是示例，不保证能看到低矮障碍。
 
 ## 3. 接 Nav2，先只看规划
 
-- [ ] 将 Nav2 的地图路径改为 `工位.yaml`，不再使用示例 `nav_test_4_27.yaml`；核对 `map_server` 发布的 `/map` 与 3D 定位的 `map` 重合。
-- [ ] 把 `nav2_params.yaml` 中 `planner_server.GridBased.allow_unknown: true` 改为 `false`；按实测车体尺寸校准 `footprint`、膨胀半径、速度和加速度。确认全局静态层使用工位地图，局部障碍层使用实时 `/scan`。
+- [ ] 生成并校验 `工位.yaml` 后，通过 `NAV2_MAP_YAML=/绝对路径/工位.yaml ./scripts/nav2_real.sh` 显式传入；核对 `map_server` 发布的 `/map` 与 3D 定位的 `map` 重合。
+- [ ] 按实测车体尺寸校准 `footprint`、膨胀半径、速度和加速度。确认全局静态层使用工位地图，局部障碍层使用实时 `/scan`。
 - [ ] 保持 `SCOUT_SEND_CONTROL=false`，启动导航入口，在 RViz 给几个位于已知空闲区的目标。**通过条件：** 能生成不穿墙、不穿未知区的路径；移动障碍出现在局部代价地图中；机器人位置与地图重合；`/cmd_vel` 方向符合预期。
 
 ## 4. 底盘实车闭环

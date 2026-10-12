@@ -12,7 +12,12 @@ if [[ -z "$NAV2_MAP_YAML" || ! -f "$NAV2_MAP_YAML" ]]; then
   exit 2
 fi
 
-if ! ip -details link show can0 2>/dev/null | grep -q '<[^>]*UP'; then
+CAN_READY=false
+if ip -details link show can0 2>/dev/null | grep -q '<[^>]*UP'; then
+  CAN_READY=true
+fi
+
+if [[ "$SCOUT_SEND_CONTROL" == "true" && "$CAN_READY" == "false" ]]; then
   echo "can0 尚未 UP。按本机 CAN 设置 500 kbit/s 并启动接口后重试。"
   echo "  sudo ip link set can0 type can bitrate 500000"
   echo "  sudo ip link set can0 up"
@@ -40,7 +45,11 @@ open_ros_window "FAST-LIO 接口与 /odom" ros2 launch lio_interface fastlio_lio
 open_ros_window "差分里程计与 /scan" ros2 launch sensor_scan_generation sensor_scan_generation_launch.py use_sim_time:=false
 open_ros_window "3D 点云转实时 /scan" ros2 launch me_nav2_bringup pointcloud_to_laserscan_launch.py use_sim_time:=false
 open_ros_window "3D GICP 定位" ros2 launch small_gicp_relocalization small_gicp_relocalization_launch.py
-open_ros_window "Scout CAN 控制" ros2 launch scout_can scout_can_launch.py "send_control:=$SCOUT_SEND_CONTROL"
+if [[ "$CAN_READY" == "true" ]]; then
+  open_ros_window "Scout CAN 控制" ros2 launch scout_can scout_can_launch.py "send_control:=$SCOUT_SEND_CONTROL"
+else
+  echo "can0 未启动，跳过 Scout CAN 节点；当前只能检查规划。"
+fi
 open_ros_window "Nav2 导航" ros2 launch me_nav2_bringup my_nav2_launch.py "map_yaml_file:=$NAV2_MAP_YAML"
 
 if [[ "$SCOUT_SEND_CONTROL" != "true" ]]; then

@@ -256,7 +256,7 @@ planner_server:
       plugin: "nav2_navfn_planner/NavfnPlanner" # 使用最稳定经典的Navfn算法（支持A*和Dijkstra）
       tolerance: 0.5                  # 终点容忍距离，如果终点在障碍物内，允许规划到距离它0.5米的位置
       use_astar: false                # False表示使用 Dijkstra 算法；True表示使用 A* 算法
-      allow_unknown: true             # 是否允许路径穿过未知区域
+      allow_unknown: false            # 未确认区域不作为通路
 
 # 路径平滑服务器
 smoother_server:

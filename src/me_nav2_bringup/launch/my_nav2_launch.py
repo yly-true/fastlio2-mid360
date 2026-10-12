@@ -14,7 +14,6 @@ def generate_launch_description():
 
     # 配置文件与地图路径
     params_file = os.path.join(me_share_path, 'config', 'nav2_params.yaml')
-    default_map_yaml_file = os.path.join(me_share_path, 'map', 'nav_test_4_27.yaml')
     map_yaml_file = LaunchConfiguration('map_yaml_file')
     rviz_file = os.path.join(me_share_path, 'rviz', 'nav2.rviz')
     
@@ -68,7 +67,7 @@ def generate_launch_description():
     )
 
     ld = LaunchDescription([
-        DeclareLaunchArgument('map_yaml_file', default_value=default_map_yaml_file),
+        DeclareLaunchArgument('map_yaml_file', description='Checked 2D map YAML aligned with the 3D map'),
     ])
     ld.add_action(navigation_cmd)
     ld.add_action(map_server_cmd)

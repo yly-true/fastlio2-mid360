@@ -57,3 +57,5 @@ ping -c 3 192.168.1.3
 ## 后续导航
 
 当前先验证 FAST-LIO2 和 3D 重定位。`pcd2pgm` 只按 `camera_init` 中的 Z 高度截取点，再投影到 XY：有点的格子是障碍，其余格子仍为未知；尚未生成可直接用于新地点导航的 2D 地图。Nav2、2D 地图及 Scout CAN 的现场事项见 [TODO.md](TODO.md)；上游说明见 [README_UPSTREAM.md](README_UPSTREAM.md)。
+
+导航入口要求显式提供核对过的二维地图：`NAV2_MAP_YAML=/绝对路径/工位.yaml ./scripts/nav2_real.sh`。未生成该地图前不要启动实车导航；仅检查规划时保持默认 `SCOUT_SEND_CONTROL=false`，无需启动 `can0`。

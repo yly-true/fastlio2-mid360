@@ -14,7 +14,6 @@
 #include "tf2_ros/buffer.h"
 #include "tf2_ros/transform_broadcaster.h"
 #include "tf2_ros/transform_listener.h"
-#include "tf2_ros/transform_listener.h"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 #include "tf2/LinearMath/Transform.h"
 #include "pcl_ros/transforms.hpp"
@@ -59,9 +58,6 @@ private:
     void laserCloudAndOdometryHandler(
         const nav_msgs::msg::Odometry::ConstSharedPtr & odometry_msg,
         const sensor_msgs::msg::PointCloud2::ConstSharedPtr & pcd_msg);
-
-    tf2::Transform getTransform(
-        const std::string & target_frame, const std::string & source_frame, const rclcpp::Time & time);
 
     void publishTransform(
         const tf2::Transform & transform, const std::string & parent_frame,
